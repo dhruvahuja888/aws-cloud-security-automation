@@ -1,0 +1,55 @@
+version: 0.2
+
+env:
+  variables:
+    VPC_CONFIG_RULE: "thesis-vpc-flow-logs-enabled"
+    OUTPUT_DIR: "output"
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.9
+    commands:
+      - echo "Installing dependencies"
+      - pip install --quiet awscli
+      - yum install -y jq
+
+  pre_build:
+    commands:
+      - mkdir -p "$OUTPUT_DIR"
+
+  build:
+    commands:
+      - echo "Trigger AWS Config evaluation for VPC Flow Logs"
+      - aws configservice start-config-rules-evaluation \
+          --config-rule-names "$VPC_CONFIG_RULE" || true
+
+      - echo "Waiting for evaluation results..."
+      - sleep 15
+
+      - echo "Checking compliance status"
+      - |
+        NON_COMPLIANT_VPCS=$(aws configservice get-compliance-details-by-config-rule \
+          --config-rule-name "$VPC_CONFIG_RULE" \
+          --query "EvaluationResults[?Compliance.ComplianceType=='NON_COMPLIANT'].EvaluationResultIdentifier.EvaluationResultQualifier.ResourceId" \
+          --output text)
+
+        if [ -n "$NON_COMPLIANT_VPCS" ]; then
+          echo "❌ NON-COMPLIANT VPCs detected:"
+          echo "$NON_COMPLIANT_VPCS"
+          aws configservice get-compliance-details-by-config-rule \
+            --config-rule-name "$VPC_CONFIG_RULE" \
+            --output json > "$OUTPUT_DIR/vpc_flow_logs_non_compliant.json"
+          exit 1
+        else
+          echo "✔ All VPCs have Flow Logs enabled"
+        fi
+
+  post_build:
+    commands:
+      - echo "Compliance validation completed"
+
+artifacts:
+  files:
+    - "**/*"
+  base-directory: "output"
