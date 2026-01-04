@@ -47,8 +47,13 @@ phases:
         fi
 
   post_build:
-    commands:
-      - echo "Compliance validation completed"
+  commands:
+    - echo "Compliance validation completed"
+    - |
+      if [ ! "$(ls -A $OUTPUT_DIR)" ]; then
+        echo '{ "status": "COMPLIANT", "message": "All VPCs have Flow Logs enabled" }' \
+          > "$OUTPUT_DIR/compliance_ok.json"
+      fi
 
 artifacts:
   files:
